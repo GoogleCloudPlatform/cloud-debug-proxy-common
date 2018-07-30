@@ -58,8 +58,7 @@ export class Wrapper {
             breakpoint.action === types.Action.LOG) &&
         breakpoint.location && typeof breakpoint.location.path === 'string' &&
         typeof breakpoint.location.line === 'number' &&
-        typeof breakpoint.id === 'string' &&
-        typeof breakpoint.isFinalState === 'boolean';
+        typeof breakpoint.id === 'string';
   }
 
   private isPendingBreakpointList(breakpointList:
@@ -109,15 +108,15 @@ export class Wrapper {
       auth: this.auth,
     };
     const response = await cloudDebugger.debuggees.list(request);
-    if (response.data.debuggees) {
-      if (this.isDebuggeeList(response.data.debuggees)) {
-        return response.data.debuggees;
-      }
-      // TODO: https://github.com/DefinitelyTyped/DefinitelyTyped/pull/27622
-      // assert.fail(new Error(
-      //     'isDebuggeeList should throw before reaching this line.'));
+    if (!response.data.debuggees) {
+      throw new Error(
+          'The debuggees.list response from Stackdriver Debug is missing ' +
+          `the list of debuggees: ${util.inspect(response, {depth: null})}`);
     }
-    return [];
+    if (!this.isDebuggeeList(response.data.debuggees)) {
+      throw new Error('isDebuggeeList should throw on failure.');
+    }
+    return response.data.debuggees;
   }
 
   async debuggeesBreakpointsDelete(breakpointId: types.BreakpointId) {
@@ -172,23 +171,16 @@ export class Wrapper {
       auth: this.auth,
     };
     const response = await cloudDebugger.debuggees.breakpoints.list(request);
-    if (!response.data.nextWaitToken) {
+    if (!response.data.nextWaitToken || !response.data.breakpoints) {
       throw new Error(
           'The debuggees.breakpoints.list response from Stackdriver Debug ' +
-          'should have the nextWaitToken property, but it returned this: ' +
-          util.inspect(response.data, {depth: null}));
+          'should have the breakpoints and nextWaitToken properties, but ' +
+          `it returned this: ${util.inspect(response.data, {depth: null})}`);
     }
-    this.waitToken = response.data.nextWaitToken;
-    if (response.data.breakpoints) {
-      if (this.isPendingBreakpointList(response.data.breakpoints)) {
-        return response.data.breakpoints;
-      }
-      // TODO: https://github.com/DefinitelyTyped/DefinitelyTyped/pull/27622
-      // assert.fail(new Error(
-      //     'isPendingBreakpointList should throw before reaching this
-      //     line.'));
+    if (!this.isPendingBreakpointList(response.data.breakpoints)) {
+      throw new Error('isPendingBreakpointList should throw on failure.');
     }
-    return [];
+    return response.data.breakpoints;
   }
 
   async debuggeesBreakpointsSet(breakpoint: types.BreakpointRequest):

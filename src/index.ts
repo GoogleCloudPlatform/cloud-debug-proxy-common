@@ -55,8 +55,6 @@ export interface BreakpointRequest extends clouddebugger_v2.Schema$Breakpoint {
   location: SourceLocation;
 }
 export interface Breakpoint extends BreakpointRequest {
-  // true iff captured snapshot (not a logpoint and not a pending snapshot).
-  isFinalState: boolean;
   id: BreakpointId;
 }
 export interface PendingBreakpoint extends Breakpoint {
