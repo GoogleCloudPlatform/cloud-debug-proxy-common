@@ -108,10 +108,10 @@ interface BreakpointInfo {
 const ABORTED_ERROR_CODE = 409;  // google.rpc.Code.ABORTED
 
 /** @fires breakpointHit as soon as any breakpoints are hit */
-// We use "our" and "us" to refer this instance of `DebugProxy`.
 export interface DebugProxyInterface extends EventEmitter {
   /**
-   * Updates the state of all pending breakpoints set by us.
+   * Updates the state of all pending breakpoints set by
+   * this instance that implements `DebugProxyInterface`.
    *
    * @param block - true to block until breakpoint list changes, otherwise false
    * @fires breakpointHit if any breakpoints were hit since their last checks
@@ -148,7 +148,10 @@ export interface DebugProxyInterface extends EventEmitter {
    * @returns breakpoint with the given breakpoint ID
    */
   getBreakpoint(breakpointId: BreakpointId): Promise<Breakpoint>;
-  /** Removes all breakpoints set by us. */
+  /**
+   * Removes all breakpoints set by this instance
+   * that implements `DebugProxyInterface`.
+   */
   removeAllBreakpoints(): Promise<void>;
   /**
    * Removes all breakpoints in the given file that have not been hit.
@@ -184,9 +187,10 @@ export interface DebugProxyInterface extends EventEmitter {
 }
 
 export class DebugProxy extends EventEmitter implements DebugProxyInterface {
-  /* This `breakpointInfoMap` is our entire state, and is only modified in
-   * the `set*` and `remove*` functions. A breakpoint is in this map if and
-   * only if it was set by us, so there is no interference with anyone else.
+  /* This `breakpointInfoMap` is the entire state of this `DebugProxy` instance,
+   * and is only modified in the `set*` and `remove*` functions. A breakpoint is
+   * in this map if and only if it was set by this `DebugProxy` instance, so no
+   * other `DebugProxy` instances are able to interfere with these breakpoints.
    */
   private wrapper: Wrapper;
   private readonly breakpointInfoMap = new Map<BreakpointId, BreakpointInfo>();
@@ -215,7 +219,8 @@ export class DebugProxy extends EventEmitter implements DebugProxyInterface {
       }
     }
 
-    // `pendingBreakpointIdSet` has IDs of all pending breakpoints set by us.
+    // `pendingBreakpointIdSet` has the IDs of all pending
+    // breakpoints set by this instance of `DebugProxy`.
     const pendingBreakpointIdSet = new Set<BreakpointId>();
     breakpointList.forEach((breakpoint: Breakpoint) => {
       const id = breakpoint.id;
@@ -277,7 +282,9 @@ export class DebugProxy extends EventEmitter implements DebugProxyInterface {
 
   getBreakpoint(breakpointId: BreakpointId): Promise<Breakpoint> {
     if (!this.breakpointInfoMap.has(breakpointId)) {
-      throw new Error('The requested breakpoint was not set by us!');
+      throw new Error(
+          `The breakpoint with ID ${breakpointId}, passed into ` +
+          '`getBreakpoint`, was not set by this instance of `DebugProxy`.');
     }
     return this.wrapper.debuggeesBreakpointsGet(breakpointId);
   }
@@ -304,7 +311,9 @@ export class DebugProxy extends EventEmitter implements DebugProxyInterface {
 
   async removeBreakpoint(breakpointId: BreakpointId) {
     if (!this.breakpointInfoMap.has(breakpointId)) {
-      throw new Error('The requested breakpoint was not set by us!');
+      throw new Error(
+          `The breakpoint with ID ${breakpointId}, passed into ` +
+          '`removeBreakpoint`, was not set by this instance of `DebugProxy`.');
     }
     this.breakpointInfoMap.delete(breakpointId);
     await this.wrapper.debuggeesBreakpointsDelete(breakpointId);
