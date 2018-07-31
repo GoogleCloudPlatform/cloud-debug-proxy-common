@@ -41,9 +41,7 @@ export class Wrapper {
       debuggeeList is types.Debuggee[] {
     for (const debuggee of debuggeeList) {
       if (!this.isDebuggee(debuggee)) {
-        throw new Error(
-            'This debuggee in the debuggees.list response is missing ' +
-            `the debuggee ID: ${util.inspect(debuggee, {depth: null})}`);
+        return false;
       }
     }
     return true;
@@ -65,16 +63,9 @@ export class Wrapper {
                                       clouddebugger_v2.Schema$Breakpoint[]):
       breakpointList is types.PendingBreakpoint[] {
     for (const breakpoint of breakpointList) {
-      if (!this.isBreakpoint(breakpoint)) {
-        throw new Error(
-            'This breakpoint in the debuggees.breakpoints.list response is ' +
-            `missing a property: ${util.inspect(breakpoint, {depth: null})}`);
-      }
-      if (breakpoint.isFinalState) {
-        throw new Error(
-            'This breakpoint in the debuggees.breakpoints.list response ' +
-            'should not be a captured snapshot, but it is: ' +
-            util.inspect(breakpoint, {depth: null}));
+      // A pending breakpoint list should not have any captured snapshots.
+      if (!this.isBreakpoint(breakpoint) || breakpoint.isFinalState) {
+        return false;
       }
     }
     return true;
@@ -113,10 +104,14 @@ export class Wrapper {
           'The debuggees.list response from Stackdriver Debug is missing ' +
           `the list of debuggees: ${util.inspect(response, {depth: null})}`);
     }
-    if (!this.isDebuggeeList(response.data.debuggees)) {
-      throw new Error('isDebuggeeList should throw on failure.');
+    if (this.isDebuggeeList(response.data.debuggees)) {
+      return response.data.debuggees;
+    } else {
+      throw new Error(
+          'The debuggees.list response from Stackdriver Debug ' +
+          'contains an element that is not a debuggee: ' +
+          util.inspect(response.data, {depth: null}));
     }
-    return response.data.debuggees;
   }
 
   async debuggeesBreakpointsDelete(breakpointId: types.BreakpointId) {
@@ -177,10 +172,15 @@ export class Wrapper {
           'should have the breakpoints and nextWaitToken properties, but ' +
           `it returned this: ${util.inspect(response.data, {depth: null})}`);
     }
-    if (!this.isPendingBreakpointList(response.data.breakpoints)) {
-      throw new Error('isPendingBreakpointList should throw on failure.');
+    this.waitToken = response.data.nextWaitToken;
+    if (this.isPendingBreakpointList(response.data.breakpoints)) {
+      return response.data.breakpoints;
+    } else {
+      throw new Error(
+          'The debuggees.breakpoints.list response from Stackdriver Debug ' +
+          'contains an element that is not a pending breakpoint: ' +
+          util.inspect(response.data.breakpoints, {depth: null}));
     }
-    return response.data.breakpoints;
   }
 
   async debuggeesBreakpointsSet(breakpoint: types.BreakpointRequest):
