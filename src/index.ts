@@ -108,15 +108,91 @@ interface BreakpointInfo {
 const ABORTED_ERROR_CODE = 409;  // google.rpc.Code.ABORTED
 
 /** @fires breakpointHit as soon as any breakpoints are hit */
-export class DebugProxy extends EventEmitter {
-  private wrapper: Wrapper;
+export interface DebugProxyInterface extends EventEmitter {
+  /**
+   * Updates the state of all pending breakpoints set by
+   * this instance that implements `DebugProxyInterface`.
+   *
+   * @param block - true to block until breakpoint list changes, otherwise false
+   * @fires breakpointHit if any breakpoints were hit since their last checks
+   */
+  updatePendingBreakpoints(block: boolean): Promise<void>;
+  /**
+   * @returns project ID for the selected GCP project
+   */
+  getProjectId(): ProjectId;
+  /**
+   * @param keyFilename - path to the GCP credentials key file
+   * corresponding to the project that is to be debugged
+   */
+  setProjectByKeyFile(keyFilename?: SourcePath): Promise<void>;
+
+  // TODO: setProjectById.
 
   /**
-   * We use "our" and "us" to refer to this instance of `DebugProxy`.
-   * This `breakpointInfoMap` is our entire state, and is only modified in
-   * the `set*` and `remove*` functions. A breakpoint is in this map if and
-   * only if it was set by us, so there is no interference with anyone else.
+   * @returns debugger ID for the selected GCP debuggee
    */
+  getDebuggerId(): DebuggerId;
+  /**
+   * @param debuggeeId - ID of the debuggee that is to be debugged
+   */
+  setDebuggeeId(debuggeeId: DebuggeeId): void;
+  /**
+   * @returns list of available debuggees for the selected project
+   */
+  getDebuggees(): Promise<Debuggee[]>;
+  /**
+   * Retrieves the breakpoint with the given ID.
+   *
+   * @param breakpointId - ID of the breakpoint to retrieve
+   * @returns breakpoint with the given breakpoint ID
+   */
+  getBreakpoint(breakpointId: BreakpointId): Promise<Breakpoint>;
+  /**
+   * Removes all breakpoints set by this instance
+   * that implements `DebugProxyInterface`.
+   */
+  removeAllBreakpoints(): Promise<void>;
+  /**
+   * Removes all breakpoints in the given file that have not been hit.
+   *
+   * This function is used by UIs that do not send breakpoints incrementally;
+   * that is, UIs that send all pending breakpoints together on every update.
+   * These semantics can be implemented by clearing them before each update.
+   *
+   * @param path - path to the file in which breakpoints should be removed
+   */
+  removePendingBreakpointsForFile(path: SourcePath): Promise<void>;
+  /**
+   * Removes the breakpoint with the given ID.
+   *
+   * @param breakpointId - ID of the breakpoint to remove
+   */
+  removeBreakpoint(breakpointId: BreakpointId): Promise<void>;
+  /**
+   * Sets a new pending breakpoint.
+   *
+   * @param breakpointRequest - breakpoint to set
+   * @return breakpoint which was successfully set
+   */
+  setBreakpoint(breakpointRequest: BreakpointRequest): Promise<Breakpoint>;
+  /**
+   * Retrieves a list of the IDs of all pending or captured snapshots.
+   *
+   * @param captured - true to get a list of the IDs of all captured snapshots,
+   * false to get a list of the IDs of all pending snapshots
+   * @returns list of IDs of snapshots of the specified type
+   */
+  getSnapshotIdList(captured: boolean): BreakpointId[];
+}
+
+export class DebugProxy extends EventEmitter implements DebugProxyInterface {
+  /* This `breakpointInfoMap` is the entire state of this `DebugProxy` instance,
+   * and is only modified in the `set*` and `remove*` functions. A breakpoint is
+   * in this map if and only if it was set by this `DebugProxy` instance, so no
+   * other `DebugProxy` instances are able to interfere with these breakpoints.
+   */
+  private wrapper: Wrapper;
   private readonly breakpointInfoMap = new Map<BreakpointId, BreakpointInfo>();
 
   constructor(readonly options: Options) {
@@ -124,12 +200,6 @@ export class DebugProxy extends EventEmitter {
     this.wrapper = new Wrapper();
   }
 
-  /**
-   * Updates the state of all pending breakpoints set by us.
-   *
-   * @param block - true to block until breakpoint list changes, otherwise false
-   * @fires breakpointHit if any breakpoints were hit since their last checks
-   */
   async updatePendingBreakpoints(block: boolean) {
     // `breakpointList` has all pending breakpoints on the debuggee.
     let breakpointList: Breakpoint[] = [];
@@ -149,7 +219,8 @@ export class DebugProxy extends EventEmitter {
       }
     }
 
-    // `pendingBreakpointIdSet` has IDs of all pending breakpoints set by us.
+    // `pendingBreakpointIdSet` has the IDs of all pending
+    // breakpoints set by this instance of `DebugProxy`.
     const pendingBreakpointIdSet = new Set<BreakpointId>();
     breakpointList.forEach((breakpoint: Breakpoint) => {
       const id = breakpoint.id;
@@ -189,59 +260,35 @@ export class DebugProxy extends EventEmitter {
     await Promise.all(removedBreakpointPromiseList);
   }
 
-
-  /**
-   * @returns project ID for the selected GCP project
-   */
   getProjectId(): ProjectId {
     return this.wrapper.getProjectId();
   }
 
-  /**
-   * @param keyFilename - path to the GCP credentials key file
-   * corresponding to the project that is to be debugged
-   */
   async setProjectByKeyFile(keyFilename?: SourcePath) {
     await this.wrapper.authorize(keyFilename);
   }
 
-  // TODO: setProjectById.
-
-  /**
-   * @returns debugger ID for the selected GCP debuggee
-   */
   getDebuggerId(): DebuggerId {
     return this.options.debuggerId;
   }
 
-  /**
-   * @param debuggeeId - ID of the debuggee that is to be debugged
-   */
   setDebuggeeId(debuggeeId: DebuggeeId) {
     this.wrapper.debuggeeId = debuggeeId;
   }
 
-  /**
-   * @returns list of available debuggees for the selected project
-   */
   async getDebuggees(): Promise<Debuggee[]> {
     return this.wrapper.debuggeesList();
   }
 
-  /**
-   * Retrieves the breakpoint with the given ID.
-   *
-   * @param breakpointId - ID of the breakpoint to retrieve
-   * @returns breakpoint with the given breakpoint ID
-   */
   getBreakpoint(breakpointId: BreakpointId): Promise<Breakpoint> {
     if (!this.breakpointInfoMap.has(breakpointId)) {
-      throw new Error('The requested breakpoint was not set by us!');
+      throw new Error(
+          `The breakpoint with ID ${breakpointId}, passed into ` +
+          '`getBreakpoint`, was not set by this instance of `DebugProxy`.');
     }
     return this.wrapper.debuggeesBreakpointsGet(breakpointId);
   }
 
-  /** Removes all breakpoints set by us. */
   async removeAllBreakpoints() {
     const promiseList: Array<Promise<void>> = [];
     this.breakpointInfoMap.forEach((info: BreakpointInfo, id: BreakpointId) => {
@@ -251,15 +298,6 @@ export class DebugProxy extends EventEmitter {
     await Promise.all(promiseList);
   }
 
-  /**
-   * Removes all breakpoints in the given file that have not been hit.
-   *
-   * This function is used by UIs that do not send breakpoints incrementally;
-   * that is, UIs that send all pending breakpoints together on every update.
-   * These semantics can be implemented by clearing them before each update.
-   *
-   * @param path - path to the file in which breakpoints should be removed
-   */
   async removePendingBreakpointsForFile(path: SourcePath) {
     const promiseList: Array<Promise<void>> = [];
     this.breakpointInfoMap.forEach((info: BreakpointInfo, id: BreakpointId) => {
@@ -271,25 +309,16 @@ export class DebugProxy extends EventEmitter {
     await Promise.all(promiseList);
   }
 
-  /**
-   * Removes the breakpoint with the given ID.
-   *
-   * @param breakpointId - ID of the breakpoint to remove
-   */
   async removeBreakpoint(breakpointId: BreakpointId) {
     if (!this.breakpointInfoMap.has(breakpointId)) {
-      throw new Error('The requested breakpoint was not set by us!');
+      throw new Error(
+          `The breakpoint with ID ${breakpointId}, passed into ` +
+          '`removeBreakpoint`, was not set by this instance of `DebugProxy`.');
     }
     this.breakpointInfoMap.delete(breakpointId);
     await this.wrapper.debuggeesBreakpointsDelete(breakpointId);
   }
 
-  /**
-   * Sets a new pending breakpoint.
-   *
-   * @param breakpointRequest - breakpoint to set
-   * @return breakpoint which was successfully set
-   */
   async setBreakpoint(breakpointRequest: BreakpointRequest):
       Promise<Breakpoint> {
     const breakpoint =
@@ -299,13 +328,6 @@ export class DebugProxy extends EventEmitter {
     return breakpoint;
   }
 
-  /**
-   * Retrieves a list of the IDs of all pending or captured snapshots.
-   *
-   * @param captured - true to get a list of the IDs of all captured snapshots,
-   * false to get a list of the IDs of all pending snapshots
-   * @returns list of IDs of snapshots of the specified type
-   */
   getSnapshotIdList(captured: boolean): BreakpointId[] {
     return Array.from(this.breakpointInfoMap)
         .filter(([id, info]) => info[hit] === captured)
