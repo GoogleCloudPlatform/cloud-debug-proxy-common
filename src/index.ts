@@ -55,8 +55,6 @@ export interface BreakpointRequest extends clouddebugger_v2.Schema$Breakpoint {
   location: SourceLocation;
 }
 export interface Breakpoint extends BreakpointRequest {
-  // true iff captured snapshot (not a logpoint and not a pending snapshot).
-  isFinalState: boolean;
   id: BreakpointId;
 }
 export interface PendingBreakpoint extends Breakpoint {
@@ -136,9 +134,10 @@ export class DebugProxy extends EventEmitter {
     // `breakpointList` has all pending breakpoints on the debuggee.
     let breakpointList: Breakpoint[] = [];
 
-    // debuggees.breakpoints.list times out until the breakpoint list changes.
-    // On timeout, it returns the error code google.rpc.Code.ABORTED, and
-    // the request should be made again until the breakpoint list changes.
+    /* debuggees.breakpoints.list times out until the breakpoint list changes.
+     * On timeout, it returns the error code google.rpc.Code.ABORTED, and
+     * the request should be made again until the breakpoint list changes.
+     */
     while (true) {
       try {
         breakpointList = await this.wrapper.debuggeesBreakpointsList(block);

@@ -47,6 +47,7 @@
     "license-check": "jsgl --local .",
     "compile": "tsc -p .",
     "codecov": "nyc report --reporter=json && codecov -f coverage/*.json",
+    "prepack": "npm run compile",
     "pretest": "npm run compile",
     "test": "nyc mocha ./build/test/",
     "posttest": "npm run check && npm run license-check"
