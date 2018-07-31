@@ -1,6 +1,6 @@
 {
   "name": "@google-cloud/debug-proxy-common",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "author": "Google LLC",
   "description": "Common module for Stackdriver Debugger proxies",
   "main": "./build/src/index.js",
