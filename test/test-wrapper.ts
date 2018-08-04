@@ -67,7 +67,13 @@ const INVALID_KEYFILE_ERROR_REGEXP_LIST = [
 ];
 const INVALID_STATUS_CODE_LIST = [301, 302, 400, 401, 403, 404, 500, 503, 504];
 const EMPTY_DEBUGGEE = {};
-const INVALID_DEBUGGEE_LIST = ['', 'empty', [], {}, {data: [VALID_DEBUGGEE]}];
+const INVALID_LIST_DEBUGGEE_LIST =
+    [{debuggees: null}, {debuggees: VALID_DEBUGGEE}];
+const LIST_INVALID_DEBUGGEE_LIST = [
+  {debuggees: 'not-a-list'},
+  {debuggees: [EMPTY_DEBUGGEE]},
+  {debuggees: [VALID_DEBUGGEE, INVALID_DEBUGGEE]},
+];
 
 nock.disableNetConnect();
 
@@ -220,8 +226,22 @@ describe('wrapper.ts', () => {
       });
     });
 
-    INVALID_DEBUGGEE_LIST.forEach((response, i) => {
-      it(`should throw on invalid response ${i}`, async () => {
+    INVALID_LIST_DEBUGGEE_LIST.forEach((response, i) => {
+      it(`should throw on invalid list ${i}`, async () => {
+        const wrapper = new Wrapper();
+        await wrapper.authorize('./test/fixtures/keyfile.json');
+        nocks.oauth2();
+        nock(STACKDRIVER_URL)
+            .get(API_URL + '/debuggees')
+            .query(true)
+            .reply(200, response);
+        await assertRejects(
+            wrapper.debuggeesList(), /TypeError: debuggeeList is not iterable/);
+      });
+    });
+
+    LIST_INVALID_DEBUGGEE_LIST.forEach((response, i) => {
+      it(`should throw on list of invalid debuggees ${i}`, async () => {
         const wrapper = new Wrapper();
         await wrapper.authorize('./test/fixtures/keyfile.json');
         nocks.oauth2();
@@ -231,7 +251,7 @@ describe('wrapper.ts', () => {
             .reply(200, response);
         await assertRejects(
             wrapper.debuggeesList(),
-            /debuggees\.list response.* is missing the list of debuggees:/);
+            /debuggees.list.* contains an element that is not a debuggee:/);
       });
     });
 
@@ -245,6 +265,18 @@ describe('wrapper.ts', () => {
       const debuggeeList: types.Debuggee[] = await wrapper.debuggeesList();
       assert.deepStrictEqual(
           debuggeeList, [VALID_DEBUGGEE, INACTIVE_DEBUGGEE, DISABLED_DEBUGGEE]);
+    });
+
+    it('should return an empty list if there are no debuggees', async () => {
+      const wrapper = new Wrapper();
+      await wrapper.authorize('./test/fixtures/keyfile.json');
+      nocks.oauth2();
+      nock(STACKDRIVER_URL)
+          .get(API_URL + '/debuggees')
+          .query(true)
+          .reply(200, {});
+      const debuggeeList: types.Debuggee[] = await wrapper.debuggeesList();
+      assert.deepStrictEqual(debuggeeList, []);
     });
   });
 });
