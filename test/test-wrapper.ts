@@ -235,8 +235,10 @@ describe('wrapper.ts', () => {
             .get(API_URL + '/debuggees')
             .query(true)
             .reply(200, response);
-        await assertRejects(
-            wrapper.debuggeesList(), /TypeError: debuggeeList is not iterable/);
+        // Node 6: Cannot read property 'Symbol(Symbol.iterator)' of null
+        // Node 6: debuggeeList[Symbol.iterator] is not a function
+        // Node 8+: TypeError: debuggeeList is not iterable
+        await assertRejects(wrapper.debuggeesList(), /TypeError:/);
       });
     });
 
