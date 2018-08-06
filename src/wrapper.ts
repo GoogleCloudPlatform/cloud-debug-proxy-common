@@ -17,7 +17,6 @@ import * as assert from 'assert';
 import {GoogleAuth, JWT} from 'google-auth-library';
 import {clouddebugger_v2, google} from 'googleapis';
 import * as util from 'util';
-
 import * as types from './index';
 
 const cloudDebugger = google.clouddebugger('v2').debugger;
@@ -99,12 +98,9 @@ export class Wrapper {
       auth: this.auth,
     };
     const response = await cloudDebugger.debuggees.list(request);
-    if (!response.data.debuggees) {
-      throw new Error(
-          'The debuggees.list response from Stackdriver Debug is missing ' +
-          `the list of debuggees: ${util.inspect(response, {depth: null})}`);
-    }
-    if (this.isDebuggeeList(response.data.debuggees)) {
+    if (response.data.debuggees === undefined) {
+      return [];
+    } else if (this.isDebuggeeList(response.data.debuggees)) {
       return response.data.debuggees;
     } else {
       throw new Error(
@@ -166,14 +162,16 @@ export class Wrapper {
       auth: this.auth,
     };
     const response = await cloudDebugger.debuggees.breakpoints.list(request);
-    if (!response.data.nextWaitToken || !response.data.breakpoints) {
+    if (!response.data.nextWaitToken) {
       throw new Error(
           'The debuggees.breakpoints.list response from Stackdriver Debug ' +
-          'should have the breakpoints and nextWaitToken properties, but ' +
-          `it returned this: ${util.inspect(response.data, {depth: null})}`);
+          'should have the nextWaitToken property, but it returned this: ' +
+          util.inspect(response.data, {depth: null}));
     }
     this.waitToken = response.data.nextWaitToken;
-    if (this.isPendingBreakpointList(response.data.breakpoints)) {
+    if (response.data.breakpoints === undefined) {
+      return [];
+    } else if (this.isPendingBreakpointList(response.data.breakpoints)) {
       return response.data.breakpoints;
     } else {
       throw new Error(
