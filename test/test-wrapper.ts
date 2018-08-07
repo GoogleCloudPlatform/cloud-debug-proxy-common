@@ -26,8 +26,17 @@ const ADC_PROJECT_ID = 'adc-project-id';
 const KEYFILE_PROJECT_ID = 'keyfile-project-id';
 const DEBUGGER_ID = 'test-debugger-id';
 const DEBUGGEE_ID = 'test-debuggee-id';
+const WAIT_TOKEN = 'wait-token';
 const STACKDRIVER_URL = 'https://clouddebugger.googleapis.com';
 const API_URL = '/v2/debugger';
+
+const INVALID_KEYFILE_ERROR_REGEXP_LIST = [
+  /SyntaxError: Unexpected token } in JSON at position 98/,
+  /The given keyFile must contain the project ID\./,
+  /Error: The incoming JSON object does not contain a private_key field/,
+  /Error: The incoming JSON object does not contain a client_email field/,
+];
+const INVALID_STATUS_CODE_LIST = [301, 302, 400, 401, 403, 404, 500, 503, 504];
 
 const VALID_DEBUGGEE: types.Debuggee = {
   id: 'test-valid-debuggee',
@@ -55,24 +64,45 @@ const DISABLED_DEBUGGEE: types.Debuggee = {
     version: 'test-disabled-debuggee-version',
   },
 };
-const INVALID_DEBUGGEE = {
-  id: 'test-invalid-debuggee',
-};
-
-const INVALID_KEYFILE_ERROR_REGEXP_LIST = [
-  /SyntaxError: Unexpected token } in JSON at position 98/,
-  /The given keyFile must contain the project ID\./,
-  /Error: The incoming JSON object does not contain a private_key field/,
-  /Error: The incoming JSON object does not contain a client_email field/,
-];
-const INVALID_STATUS_CODE_LIST = [301, 302, 400, 401, 403, 404, 500, 503, 504];
-const EMPTY_DEBUGGEE = {};
 const INVALID_LIST_DEBUGGEE_LIST =
-    [{debuggees: null}, {debuggees: VALID_DEBUGGEE}];
-const LIST_INVALID_DEBUGGEE_LIST = [
-  {debuggees: 'not-a-list'},
-  {debuggees: [EMPTY_DEBUGGEE]},
-  {debuggees: [VALID_DEBUGGEE, INVALID_DEBUGGEE]},
+    [{debuggees: null}, {debuggees: 42}, {debuggees: VALID_DEBUGGEE}];
+const INVALID_DEBUGGEE_LIST = [
+  {},
+  {id: 'test-invalid-debuggee', labels: 'label-string'},
+  {id: 42, labels: {projectid: 'projectid', version: 'gcp:12345'}},
+  {id: 'test-invalid-debuggee', labels: {version: 'gcp:12345'}},
+  {id: 'test-invalid-debuggee', labels: {projectid: 'projectid'}},
+  {id: 'test-invalid-debuggee', labels: {projectid: 7, version: 'gcp:12345'}},
+  {id: 'test-invalid-debuggee', labels: {projectid: 'projectid', version: 3}},
+];
+
+const VALID_BREAKPOINT: types.Breakpoint = {
+  id: 'test-valid-breakpoint',
+  location: {
+    path: 'test-valid-breakpoint-path',
+    line: 42,
+  },
+};
+const INVALID_LIST_BREAKPOINT_LIST = [
+  {nextWaitToken: WAIT_TOKEN, breakpoints: null},
+  {nextWaitToken: WAIT_TOKEN, breakpoints: 42},
+  {nextWaitToken: WAIT_TOKEN, breakpoints: VALID_BREAKPOINT},
+];
+const INVALID_BREAKPOINT_LIST = [
+  {},
+  {id: 'test-invalid-breakpoint', location: 'location-string'},
+  {id: 42, location: {path: 'source-path', line: 57}},
+  {id: 'test-invalid-breakpoint', location: {line: 57}},
+  {id: 'test-invalid-breakpoint', location: {path: 'source-path'}},
+  {id: 'test-invalid-breakpoint', location: {path: 1337, line: 57}},
+  {id: 'test-invalid-breakpoint', location: {path: 'source-path', line: '57'}},
+];
+const CAPTURED_SNAPSHOT_LIST = [
+  {
+    id: 'test-captured-snapshot',
+    isFinalState: true,
+    location: {path: 'source-path', line: 57}
+  },
 ];
 
 nock.disableNetConnect();
@@ -84,6 +114,7 @@ describe('wrapper.ts', () => {
   });
   after(() => {
     process.env = savedEnv;
+    assert(nock.isDone());
   });
 
   describe('authorize', () => {
@@ -202,83 +233,366 @@ describe('wrapper.ts', () => {
   });
 
   describe('debuggeesList', () => {
+    const NOCK_URL = `${API_URL}/debuggees`;
+
     beforeEach(() => {
       process.env = {};
     });
 
-    it('should fail if not authorized', () => {
+    async function initialize(): Promise<Wrapper> {
       const wrapper = new Wrapper();
-      return assertRejects(
+      await wrapper.authorize('./test/fixtures/keyfile.json');
+      nocks.oauth2();
+      return wrapper;
+    }
+
+    it('should fail if not authorized', async () => {
+      const wrapper = new Wrapper();
+      await assertRejects(
           wrapper.debuggeesList(),
           /You must select a project before continuing\./);
     });
 
     INVALID_STATUS_CODE_LIST.forEach((httpCode) => {
       it(`should throw on invalid HTTP status code ${httpCode}`, async () => {
-        const wrapper = new Wrapper();
-        await wrapper.authorize('./test/fixtures/keyfile.json');
-        nocks.oauth2();
+        const wrapper = await initialize();
         nock(STACKDRIVER_URL)
-            .get(API_URL + '/debuggees')
-            .query(true)
+            .get(NOCK_URL)
+            .query({project: KEYFILE_PROJECT_ID})
             .reply(httpCode, {debuggees: [VALID_DEBUGGEE]});
-        await assertRejects(wrapper.debuggeesList());
+        // 30x: Request failed with status code 30x
+        // 40x, 50x: Error: [object Object]
+        await assertRejects(
+            wrapper.debuggeesList(),
+            /(?:Request failed with status)|(?:Error: \[object Object\])/);
       });
     });
 
     INVALID_LIST_DEBUGGEE_LIST.forEach((response, i) => {
       it(`should throw on invalid list ${i}`, async () => {
-        const wrapper = new Wrapper();
-        await wrapper.authorize('./test/fixtures/keyfile.json');
-        nocks.oauth2();
+        const wrapper = await initialize();
         nock(STACKDRIVER_URL)
-            .get(API_URL + '/debuggees')
-            .query(true)
+            .get(NOCK_URL)
+            .query({project: KEYFILE_PROJECT_ID})
             .reply(200, response);
         // Node 6: Cannot read property 'Symbol(Symbol.iterator)' of null
         // Node 6: debuggeeList[Symbol.iterator] is not a function
-        // Node 8+: TypeError: debuggeeList is not iterable
+        // Node 8+: debuggeeList is not iterable
         await assertRejects(wrapper.debuggeesList(), /TypeError:/);
       });
     });
 
-    LIST_INVALID_DEBUGGEE_LIST.forEach((response, i) => {
-      it(`should throw on list of invalid debuggees ${i}`, async () => {
-        const wrapper = new Wrapper();
-        await wrapper.authorize('./test/fixtures/keyfile.json');
-        nocks.oauth2();
+    INVALID_DEBUGGEE_LIST.forEach((debuggee, i) => {
+      it(`should throw on invalid debuggee ${i}`, async () => {
+        const wrapper = await initialize();
         nock(STACKDRIVER_URL)
-            .get(API_URL + '/debuggees')
-            .query(true)
-            .reply(200, response);
+            .get(NOCK_URL)
+            .query({project: KEYFILE_PROJECT_ID})
+            .reply(200, {debuggees: [debuggee]});
         await assertRejects(
             wrapper.debuggeesList(),
-            /debuggees.list.* contains an element that is not a debuggee:/);
+            /debuggees\.list.* contains an element that is not a debuggee:/);
       });
+    });
+
+    it('should throw on list of invalid debuggees', async () => {
+      const wrapper = await initialize();
+      nock(STACKDRIVER_URL)
+          .get(NOCK_URL)
+          .query({project: KEYFILE_PROJECT_ID})
+          .reply(200, {debuggees: INVALID_DEBUGGEE_LIST});
+      await assertRejects(
+          wrapper.debuggeesList(),
+          /debuggees\.list.* contains an element that is not a debuggee:/);
+    });
+
+    it('should return a valid debuggee', async () => {
+      const wrapper = await initialize();
+      nock(STACKDRIVER_URL)
+          .get(NOCK_URL)
+          .query({project: KEYFILE_PROJECT_ID})
+          .reply(200, {
+            debuggees: [VALID_DEBUGGEE],
+          });
+      assert.deepStrictEqual(await wrapper.debuggeesList(), [VALID_DEBUGGEE]);
     });
 
     it('should return a list of debuggees', async () => {
-      const wrapper = new Wrapper();
-      await wrapper.authorize('./test/fixtures/keyfile.json');
-      nocks.oauth2();
-      nock(STACKDRIVER_URL).get(API_URL + '/debuggees').query(true).reply(200, {
-        debuggees: [VALID_DEBUGGEE, INACTIVE_DEBUGGEE, DISABLED_DEBUGGEE]
-      });
-      const debuggeeList: types.Debuggee[] = await wrapper.debuggeesList();
+      const wrapper = await initialize();
+      nock(STACKDRIVER_URL)
+          .get(NOCK_URL)
+          .query({project: KEYFILE_PROJECT_ID})
+          .reply(200, {
+            debuggees: [VALID_DEBUGGEE, INACTIVE_DEBUGGEE, DISABLED_DEBUGGEE],
+          });
       assert.deepStrictEqual(
-          debuggeeList, [VALID_DEBUGGEE, INACTIVE_DEBUGGEE, DISABLED_DEBUGGEE]);
+          await wrapper.debuggeesList(),
+          [VALID_DEBUGGEE, INACTIVE_DEBUGGEE, DISABLED_DEBUGGEE]);
     });
 
     it('should return an empty list if there are no debuggees', async () => {
+      const wrapper = await initialize();
+      nock(STACKDRIVER_URL)
+          .get(NOCK_URL)
+          .query({project: KEYFILE_PROJECT_ID})
+          .reply(200, {});
+      assert.deepStrictEqual(await wrapper.debuggeesList(), []);
+    });
+  });
+
+  describe('debuggeesBreakpointsList', () => {
+    const NOCK_URL = `${API_URL}/debuggees/${DEBUGGEE_ID}/breakpoints`;
+
+    beforeEach(() => {
+      process.env = {};
+    });
+
+    async function initialize(): Promise<Wrapper> {
       const wrapper = new Wrapper();
       await wrapper.authorize('./test/fixtures/keyfile.json');
+      wrapper.debuggeeId = DEBUGGEE_ID;
       nocks.oauth2();
+      return wrapper;
+    }
+
+    it('should fail if not authorized', async () => {
+      const wrapper = new Wrapper();
+      await Promise.all([
+        assertRejects(
+            wrapper.debuggeesBreakpointsList(false),
+            /You must select a project before continuing\./),
+        assertRejects(
+            wrapper.debuggeesBreakpointsList(true),
+            /You must select a project before continuing\./),
+      ]);
+    });
+
+    it('should fail if no debuggee is set', async () => {
+      const wrapper = new Wrapper();
+      await wrapper.authorize('./test/fixtures/keyfile.json');
+      await Promise.all([
+        assertRejects(
+            wrapper.debuggeesBreakpointsList(false),
+            /You must select a debuggee before continuing\./),
+        assertRejects(
+            wrapper.debuggeesBreakpointsList(true),
+            /You must select a debuggee before continuing\./),
+      ]);
+    });
+
+    it('should fail if nextWaitToken is missing', async () => {
+      const wrapper = await initialize();
       nock(STACKDRIVER_URL)
-          .get(API_URL + '/debuggees')
-          .query(true)
+          .get(NOCK_URL)
+          .twice()
+          .query({waitToken: ''})
           .reply(200, {});
-      const debuggeeList: types.Debuggee[] = await wrapper.debuggeesList();
-      assert.deepStrictEqual(debuggeeList, []);
+      await Promise.all([
+        assertRejects(
+            wrapper.debuggeesBreakpointsList(false),
+            /breakpoints\.list.* should have the nextWaitToken property, but it/),
+        assertRejects(
+            wrapper.debuggeesBreakpointsList(true),
+            /breakpoints\.list.* should have the nextWaitToken property, but it/),
+      ]);
+    });
+
+    INVALID_STATUS_CODE_LIST.forEach((httpCode) => {
+      it(`should throw on invalid HTTP status code ${httpCode}`, async () => {
+        const wrapper = await initialize();
+        nock(STACKDRIVER_URL)
+            .get(NOCK_URL)
+            .twice()
+            .query({waitToken: ''})
+            .reply(
+                httpCode,
+                {nextWaitToken: WAIT_TOKEN, breakpoints: [VALID_BREAKPOINT]});
+        // 30x: Request failed with status code 30x
+        // 40x, 50x: Error: [object Object]
+        await Promise.all([
+          assertRejects(
+              wrapper.debuggeesBreakpointsList(true),
+              /(?:Request failed with status)|(?:Error: \[object Object\])/),
+          assertRejects(
+              wrapper.debuggeesBreakpointsList(true),
+              /(?:Request failed with status)|(?:Error: \[object Object\])/),
+        ]);
+      });
+    });
+
+    INVALID_LIST_BREAKPOINT_LIST.forEach((response, i) => {
+      it(`should throw on invalid list ${i}`, async () => {
+        const wrapper = await initialize();
+        nock(STACKDRIVER_URL)
+            .get(NOCK_URL)
+            .query({waitToken: ''})
+            .reply(200, response);
+        // Node 6: Cannot read property 'Symbol(Symbol.iterator)' of null
+        // Node 6: breakpointList[Symbol.iterator] is not a function
+        // Node 8+: breakpointList is not iterable
+        await assertRejects(wrapper.debuggeesBreakpointsList(false), /TypeErr/);
+        nock(STACKDRIVER_URL)
+            .get(NOCK_URL)
+            .query({waitToken: WAIT_TOKEN})
+            .reply(200, response);
+        await assertRejects(wrapper.debuggeesBreakpointsList(true), /TypeErr/);
+      });
+    });
+
+    INVALID_BREAKPOINT_LIST.forEach((breakpoint, i) => {
+      it(`should throw on invalid breakpoint ${i}`, async () => {
+        const wrapper = await initialize();
+        nock(STACKDRIVER_URL).get(NOCK_URL).query({waitToken: ''}).reply(200, {
+          nextWaitToken: WAIT_TOKEN,
+          breakpoints: [breakpoint],
+        });
+        await assertRejects(
+            wrapper.debuggeesBreakpointsList(false),
+            /breakpoints\.list.* an element that is not a pending breakpoint:/);
+        nock(STACKDRIVER_URL)
+            .get(NOCK_URL)
+            .query({waitToken: WAIT_TOKEN})
+            .reply(200, {nextWaitToken: WAIT_TOKEN, breakpoints: [breakpoint]});
+        await assertRejects(
+            wrapper.debuggeesBreakpointsList(true),
+            /breakpoints\.list.* an element that is not a pending breakpoint:/);
+      });
+    });
+
+    it('should throw on list of invalid breakpoints', async () => {
+      const wrapper = await initialize();
+      nock(STACKDRIVER_URL).get(NOCK_URL).query({waitToken: ''}).reply(200, {
+        nextWaitToken: WAIT_TOKEN,
+        breakpoints: INVALID_BREAKPOINT_LIST,
+      });
+      await assertRejects(
+          wrapper.debuggeesBreakpointsList(false),
+          /breakpoints\.list.* an element that is not a pending breakpoint:/);
+      nock(STACKDRIVER_URL)
+          .get(NOCK_URL)
+          .query({waitToken: WAIT_TOKEN})
+          .reply(200, {
+            nextWaitToken: WAIT_TOKEN,
+            breakpoints: INVALID_BREAKPOINT_LIST,
+          });
+      await assertRejects(
+          wrapper.debuggeesBreakpointsList(true),
+          /breakpoints\.list.* an element that is not a pending breakpoint:/);
+    });
+
+    CAPTURED_SNAPSHOT_LIST.forEach((snapshot, i) => {
+      it(`should throw on captured snapshot ${i}`, async () => {
+        const wrapper = await initialize();
+        nock(STACKDRIVER_URL).get(NOCK_URL).query({waitToken: ''}).reply(200, {
+          nextWaitToken: WAIT_TOKEN,
+          breakpoints: [snapshot],
+        });
+        await assertRejects(
+            wrapper.debuggeesBreakpointsList(false),
+            /breakpoints\.list.* an element that is not a pending breakpoint:/);
+        nock(STACKDRIVER_URL)
+            .get(NOCK_URL)
+            .query({waitToken: WAIT_TOKEN})
+            .reply(200, {nextWaitToken: WAIT_TOKEN, breakpoints: [snapshot]});
+        await assertRejects(
+            wrapper.debuggeesBreakpointsList(true),
+            /breakpoints\.list.* an element that is not a pending breakpoint:/);
+      });
+    });
+
+    it('should throw on list of captured snapshots', async () => {
+      const wrapper = await initialize();
+      nock(STACKDRIVER_URL).get(NOCK_URL).query({waitToken: ''}).reply(200, {
+        nextWaitToken: WAIT_TOKEN,
+        breakpoints: CAPTURED_SNAPSHOT_LIST,
+      });
+      await assertRejects(
+          wrapper.debuggeesBreakpointsList(false),
+          /breakpoints\.list.* an element that is not a pending breakpoint:/);
+      nock(STACKDRIVER_URL)
+          .get(NOCK_URL)
+          .query({waitToken: WAIT_TOKEN})
+          .reply(
+              200,
+              {nextWaitToken: WAIT_TOKEN, breakpoints: CAPTURED_SNAPSHOT_LIST});
+      await assertRejects(
+          wrapper.debuggeesBreakpointsList(true),
+          /breakpoints\.list.* an element that is not a pending breakpoint:/);
+    });
+
+    it('should return a valid breakpoint', async () => {
+      const wrapper = await initialize();
+      nock(STACKDRIVER_URL).get(NOCK_URL).query({waitToken: ''}).reply(200, {
+        nextWaitToken: WAIT_TOKEN,
+        breakpoints: [VALID_BREAKPOINT],
+      });
+      assert.deepStrictEqual(
+          await wrapper.debuggeesBreakpointsList(false), [VALID_BREAKPOINT]);
+      nock(STACKDRIVER_URL)
+          .get(NOCK_URL)
+          .query({waitToken: WAIT_TOKEN})
+          .reply(200, {
+            nextWaitToken: WAIT_TOKEN,
+            breakpoints: [VALID_BREAKPOINT],
+          });
+      assert.deepStrictEqual(
+          await wrapper.debuggeesBreakpointsList(true), [VALID_BREAKPOINT]);
+    });
+
+    it('should return a list of breakpoints', async () => {
+      const wrapper = await initialize();
+      nock(STACKDRIVER_URL).get(NOCK_URL).query({waitToken: ''}).reply(200, {
+        nextWaitToken: WAIT_TOKEN,
+        breakpoints: [VALID_BREAKPOINT, VALID_BREAKPOINT, VALID_BREAKPOINT],
+      });
+      assert.deepStrictEqual(
+          await wrapper.debuggeesBreakpointsList(false),
+          [VALID_BREAKPOINT, VALID_BREAKPOINT, VALID_BREAKPOINT]);
+      nock(STACKDRIVER_URL)
+          .get(NOCK_URL)
+          .query({waitToken: WAIT_TOKEN})
+          .reply(200, {
+            nextWaitToken: WAIT_TOKEN,
+            breakpoints: [VALID_BREAKPOINT, VALID_BREAKPOINT, VALID_BREAKPOINT],
+          });
+      assert.deepStrictEqual(
+          await wrapper.debuggeesBreakpointsList(true),
+          [VALID_BREAKPOINT, VALID_BREAKPOINT, VALID_BREAKPOINT]);
+    });
+
+    it('should return an empty list if there are no breakpoints', async () => {
+      const wrapper = await initialize();
+      nock(STACKDRIVER_URL).get(NOCK_URL).query({waitToken: ''}).reply(200, {
+        nextWaitToken: WAIT_TOKEN,
+      });
+      assert.deepStrictEqual(await wrapper.debuggeesBreakpointsList(false), []);
+      nock(STACKDRIVER_URL)
+          .get(NOCK_URL)
+          .query({waitToken: WAIT_TOKEN})
+          .reply(200, {nextWaitToken: WAIT_TOKEN});
+      assert.deepStrictEqual(await wrapper.debuggeesBreakpointsList(true), []);
+    });
+
+    it('should update waitToken after every call', async () => {
+      const wrapper = await initialize();
+      nock(STACKDRIVER_URL).get(NOCK_URL).query({waitToken: ''}).reply(200, {
+        nextWaitToken: 'wait-token-1',
+      });
+      await wrapper.debuggeesBreakpointsList(true);
+      nock(STACKDRIVER_URL)
+          .get(NOCK_URL)
+          .query({waitToken: 'wait-token-1'})
+          .reply(200, {nextWaitToken: 'wait-token-2'});
+      await wrapper.debuggeesBreakpointsList(true);
+      nock(STACKDRIVER_URL).get(NOCK_URL).query({waitToken: ''}).reply(200, {
+        nextWaitToken: 'wait-token-3',
+      });
+      await wrapper.debuggeesBreakpointsList(false);
+      nock(STACKDRIVER_URL)
+          .get(NOCK_URL)
+          .query({waitToken: 'wait-token-3'})
+          .reply(200, {nextWaitToken: 'wait-token-4'});
+      await wrapper.debuggeesBreakpointsList(true);
     });
   });
 });
