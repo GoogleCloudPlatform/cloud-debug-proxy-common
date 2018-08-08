@@ -54,15 +54,12 @@ export interface BreakpointRequest extends clouddebugger_v2.Schema$Breakpoint {
   action: Action;
   location: SourceLocation;
 }
-export interface Breakpoint extends BreakpointRequest {
+export interface Breakpoint extends clouddebugger_v2.Schema$Breakpoint {
   id: BreakpointId;
-}
-export interface PendingBreakpoint extends Breakpoint {
-  isFinalState: false;
+  location: SourceLocation;
 }
 export interface CapturedSnapshot extends Breakpoint {
   isFinalState: true;
-  action: Action.CAPTURE;
   stackFrames: StackFrame[];
   variableTable: Variable[];
 }

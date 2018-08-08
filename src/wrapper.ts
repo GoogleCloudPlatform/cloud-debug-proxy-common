@@ -51,16 +51,14 @@ export class Wrapper {
                        clouddebugger_v2.Schema$Breakpoint):
       breakpointRequest is types.Breakpoint {
     const breakpoint = breakpointRequest as types.Breakpoint;
-    return (breakpoint.action === types.Action.CAPTURE ||
-            breakpoint.action === types.Action.LOG) &&
-        breakpoint.location && typeof breakpoint.location.path === 'string' &&
-        typeof breakpoint.location.line === 'number' &&
-        typeof breakpoint.id === 'string';
+    return typeof breakpoint.id === 'string' && breakpoint.location &&
+        typeof breakpoint.location.path === 'string' &&
+        typeof breakpoint.location.line === 'number';
   }
 
   private isPendingBreakpointList(breakpointList:
                                       clouddebugger_v2.Schema$Breakpoint[]):
-      breakpointList is types.PendingBreakpoint[] {
+      breakpointList is types.Breakpoint[] {
     for (const breakpoint of breakpointList) {
       // A pending breakpoint list should not have any captured snapshots.
       if (!this.isBreakpoint(breakpoint) || breakpoint.isFinalState) {
@@ -148,8 +146,7 @@ export class Wrapper {
     return response.data.breakpoint;
   }
 
-  async debuggeesBreakpointsList(wait: boolean):
-      Promise<types.PendingBreakpoint[]> {
+  async debuggeesBreakpointsList(wait: boolean): Promise<types.Breakpoint[]> {
     if (!this.auth) {
       throw new Error('You must select a project before continuing.');
     }
