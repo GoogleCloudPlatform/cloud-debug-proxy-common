@@ -17,8 +17,8 @@ import * as assert from 'assert';
 import {EventEmitter} from 'events';
 import {clouddebugger_v2} from 'googleapis';
 import * as util from 'util';
-
 import {Wrapper} from './wrapper';
+import pLimit = require('p-limit');
 
 export type OneIndexedLineNumber = number;
 export type OneIndexedColumnNumber = number;
@@ -103,6 +103,7 @@ interface BreakpointInfo {
 }
 
 const ABORTED_ERROR_CODE = 409;  // google.rpc.Code.ABORTED
+const CONCURRENCY = 10;
 
 /** @fires breakpointHit as soon as any breakpoints are hit */
 export interface DebugProxyInterface extends EventEmitter {
@@ -229,17 +230,19 @@ export class DebugProxy extends EventEmitter implements DebugProxyInterface {
 
     // A breakpoint in `breakpointInfoMap` but not in `pendingBreakpointIdSet`
     // could be hit since its last check, so check again and update its state.
+    const possiblyHitLimit = pLimit(CONCURRENCY);
     const possiblyHitPromiseList: Array<Promise<Breakpoint>> = [];
     this.breakpointInfoMap.forEach((info: BreakpointInfo, id: BreakpointId) => {
       if (!pendingBreakpointIdSet.has(id)) {
-        possiblyHitPromiseList.push(this.getBreakpoint(id));
+        possiblyHitPromiseList.push(
+            possiblyHitLimit(() => this.getBreakpoint(id)));
       }
     });
 
     // These breakpoints have either been hit or removed by someone else.
     let hitAny = false;
+    const removedBreakpointLimit = pLimit(CONCURRENCY);
     const removedBreakpointPromiseList: Array<Promise<void>> = [];
-    // TODO: use https://www.npmjs.com/package/p-limit to rate-limit Promise.all
     const possiblyHitBreakpointList = await Promise.all(possiblyHitPromiseList);
     possiblyHitBreakpointList.forEach((breakpoint: Breakpoint) => {
       if (breakpoint.isFinalState) {
@@ -247,7 +250,8 @@ export class DebugProxy extends EventEmitter implements DebugProxyInterface {
         this.breakpointInfoMap.get(breakpoint.id)![hit] = true;
         hitAny = true;
       } else {
-        removedBreakpointPromiseList.push(this.removeBreakpoint(breakpoint.id));
+        removedBreakpointPromiseList.push(
+            removedBreakpointLimit(() => this.removeBreakpoint(breakpoint.id)));
       }
     });
 
@@ -287,20 +291,24 @@ export class DebugProxy extends EventEmitter implements DebugProxyInterface {
   }
 
   async removeAllBreakpoints() {
+    const limit = pLimit(CONCURRENCY);
     const promiseList: Array<Promise<void>> = [];
     this.breakpointInfoMap.forEach((info: BreakpointInfo, id: BreakpointId) => {
-      promiseList.push(this.wrapper.debuggeesBreakpointsDelete(id));
+      promiseList.push(
+          limit(() => this.wrapper.debuggeesBreakpointsDelete(id)));
     });
     this.breakpointInfoMap.clear();
     await Promise.all(promiseList);
   }
 
   async removePendingBreakpointsForFile(path: SourcePath) {
+    const limit = pLimit(CONCURRENCY);
     const promiseList: Array<Promise<void>> = [];
     this.breakpointInfoMap.forEach((info: BreakpointInfo, id: BreakpointId) => {
       if (!info[hit] && info.path === path) {
         this.breakpointInfoMap.delete(id);
-        promiseList.push(this.wrapper.debuggeesBreakpointsDelete(id));
+        promiseList.push(
+            limit(() => this.wrapper.debuggeesBreakpointsDelete(id)));
       }
     });
     await Promise.all(promiseList);
