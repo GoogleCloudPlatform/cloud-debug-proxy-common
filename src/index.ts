@@ -46,6 +46,10 @@ export interface StackFrame extends clouddebugger_v2.Schema$StackFrame {
   function: string;
   location: SourceLocation;
 }
+
+// A breakpoint is either a snapshot (`CAPTURE`) or a logpoint (`LOG`).
+// A snapshot is either captured (`isFinalState === true`) or pending.
+// https://cloud.google.com/debugger/api/reference/rest/v2/debugger.debuggees.breakpoints#Breakpoint
 export enum Action {
   CAPTURE = 'CAPTURE',
   LOG = 'LOG',
@@ -63,7 +67,6 @@ export interface CapturedSnapshot extends Breakpoint {
   stackFrames: StackFrame[];
   variableTable: Variable[];
 }
-
 export interface Debuggee extends clouddebugger_v2.Schema$Debuggee {
   id: DebuggeeId;
   labels: {projectid: string; version: string};
@@ -99,7 +102,7 @@ export interface DebuggeesBreakpointsSetResponse {
 const hit = Symbol();
 interface BreakpointInfo {
   [hit]: boolean;  // Set after a `breakpointHit` event is emitted.
-  path: SourcePath;
+  breakpoint: Breakpoint;
 }
 
 const ABORTED_ERROR_CODE = 409;  // google.rpc.Code.ABORTED
@@ -126,6 +129,7 @@ export interface DebugProxyInterface extends EventEmitter {
   setProjectByKeyFile(keyFilename?: SourcePath): Promise<void>;
 
   // TODO: setProjectById.
+  // https://github.com/GoogleCloudPlatform/cloud-debug-proxy-common/issues/14
 
   /**
    * @returns debugger ID for the selected GCP debuggee
@@ -144,6 +148,7 @@ export interface DebugProxyInterface extends EventEmitter {
    *
    * @param breakpointId - ID of the breakpoint to retrieve
    * @returns breakpoint with the given breakpoint ID
+   * @throws if the breakpoint with the given ID was not set by this instance
    */
   getBreakpoint(breakpointId: BreakpointId): Promise<Breakpoint>;
   /**
@@ -165,6 +170,7 @@ export interface DebugProxyInterface extends EventEmitter {
    * Removes the breakpoint with the given ID.
    *
    * @param breakpointId - ID of the breakpoint to remove
+   * @throws if the breakpoint with the given ID was not set by this instance
    */
   removeBreakpoint(breakpointId: BreakpointId): Promise<void>;
   /**
@@ -175,13 +181,13 @@ export interface DebugProxyInterface extends EventEmitter {
    */
   setBreakpoint(breakpointRequest: BreakpointRequest): Promise<Breakpoint>;
   /**
-   * Retrieves a list of the IDs of all pending or captured snapshots.
+   * Retrieves a list of all pending breakpoints or captured snapshots.
    *
-   * @param captured - true to get a list of the IDs of all captured snapshots,
-   * false to get a list of the IDs of all pending snapshots
-   * @returns list of IDs of snapshots of the specified type
+   * @param captured - true to get a list of all captured snapshots,
+   * false to get a list of all pending breakpoints
+   * @returns list of breakpoints of the specified type
    */
-  getSnapshotIdList(captured: boolean): BreakpointId[];
+  getBreakpointList(captured: boolean): Breakpoint[];
 }
 
 export class DebugProxy extends EventEmitter implements DebugProxyInterface {
@@ -222,8 +228,10 @@ export class DebugProxy extends EventEmitter implements DebugProxyInterface {
     const pendingBreakpointIdSet = new Set<BreakpointId>();
     breakpointList.forEach((breakpoint: Breakpoint) => {
       const id = breakpoint.id;
-      if (this.breakpointInfoMap.has(id)) {
-        assert.strictEqual(this.breakpointInfoMap.get(id)![hit], false);
+      const breakpointInfo = this.breakpointInfoMap.get(id);
+      if (breakpointInfo) {
+        assert.strictEqual(breakpointInfo[hit], false);
+        assert.deepStrictEqual(breakpointInfo.breakpoint, breakpoint);
         pendingBreakpointIdSet.add(id);
       }
     });
@@ -246,9 +254,20 @@ export class DebugProxy extends EventEmitter implements DebugProxyInterface {
     const possiblyHitBreakpointList = await Promise.all(possiblyHitPromiseList);
     possiblyHitBreakpointList.forEach((breakpoint: Breakpoint) => {
       if (breakpoint.isFinalState) {
-        assert(this.breakpointInfoMap.has(breakpoint.id));
-        this.breakpointInfoMap.get(breakpoint.id)![hit] = true;
-        hitAny = true;
+        // These breakpoints all originally came from `breakpointInfoMap`.
+        const breakpointInfo = this.breakpointInfoMap.get(breakpoint.id);
+        if (!breakpointInfo) {
+          throw new Error(
+              `The breakpoint with ID ${breakpoint.id} ` +
+              'was not set by this instance of `DebugProxy`.');
+        }
+        if (breakpointInfo[hit]) {
+          assert.deepStrictEqual(breakpointInfo.breakpoint, breakpoint);
+        } else {
+          breakpointInfo[hit] = true;
+          breakpointInfo.breakpoint = breakpoint;
+          hitAny = true;
+        }
       } else {
         removedBreakpointPromiseList.push(
             removedBreakpointLimit(() => this.removeBreakpoint(breakpoint.id)));
@@ -305,7 +324,7 @@ export class DebugProxy extends EventEmitter implements DebugProxyInterface {
     const limit = pLimit(CONCURRENCY);
     const promiseList: Array<Promise<void>> = [];
     this.breakpointInfoMap.forEach((info: BreakpointInfo, id: BreakpointId) => {
-      if (!info[hit] && info.path === path) {
+      if (!info[hit] && info.breakpoint.location.path === path) {
         this.breakpointInfoMap.delete(id);
         promiseList.push(
             limit(() => this.wrapper.debuggeesBreakpointsDelete(id)));
@@ -328,14 +347,13 @@ export class DebugProxy extends EventEmitter implements DebugProxyInterface {
       Promise<Breakpoint> {
     const breakpoint =
         await this.wrapper.debuggeesBreakpointsSet(breakpointRequest);
-    this.breakpointInfoMap.set(
-        breakpoint.id, {[hit]: false, path: breakpoint.location.path});
+    this.breakpointInfoMap.set(breakpoint.id, {[hit]: false, breakpoint});
     return breakpoint;
   }
 
-  getSnapshotIdList(captured: boolean): BreakpointId[] {
+  getBreakpointList(captured: boolean): Breakpoint[] {
     return Array.from(this.breakpointInfoMap)
         .filter(([id, info]) => info[hit] === captured)
-        .map(([id, info]) => id);
+        .map(([id, info]) => info.breakpoint);
   }
 }
