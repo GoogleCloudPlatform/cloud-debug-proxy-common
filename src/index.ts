@@ -148,6 +148,7 @@ export interface DebugProxyInterface extends EventEmitter {
    *
    * @param breakpointId - ID of the breakpoint to retrieve
    * @returns breakpoint with the given breakpoint ID
+   * @throws if the breakpoint with the given ID was not set by this instance
    */
   getBreakpoint(breakpointId: BreakpointId): Promise<Breakpoint>;
   /**
@@ -169,6 +170,7 @@ export interface DebugProxyInterface extends EventEmitter {
    * Removes the breakpoint with the given ID.
    *
    * @param breakpointId - ID of the breakpoint to remove
+   * @throws if the breakpoint with the given ID was not set by this instance
    */
   removeBreakpoint(breakpointId: BreakpointId): Promise<void>;
   /**
@@ -252,6 +254,7 @@ export class DebugProxy extends EventEmitter implements DebugProxyInterface {
     const possiblyHitBreakpointList = await Promise.all(possiblyHitPromiseList);
     possiblyHitBreakpointList.forEach((breakpoint: Breakpoint) => {
       if (breakpoint.isFinalState) {
+        // These breakpoints all originally came from `breakpointInfoMap`.
         const breakpointInfo = this.breakpointInfoMap.get(breakpoint.id);
         if (!breakpointInfo) {
           throw new Error(
