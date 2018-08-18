@@ -38,9 +38,11 @@
     "typescript": "3.0.x"
   },
   "dependencies": {
+    "@google-cloud/common": "^0.21.1",
     "google-auth-library": "^1.5.0",
     "googleapis": "^32.0.0",
-    "p-limit": "^2.0.0"
+    "p-limit": "^2.0.0",
+    "querystring": "^0.2.0"
   },
   "scripts": {
     "check": "gts check",

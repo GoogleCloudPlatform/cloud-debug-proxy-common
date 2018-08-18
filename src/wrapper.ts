@@ -20,6 +20,7 @@ import * as util from 'util';
 import * as types from './index';
 
 const cloudDebugger = google.clouddebugger('v2').debugger;
+const cloudProfiler = google.cloudprofiler('v2').projects;
 
 export class Wrapper {
   private googleAuth = new GoogleAuth();
@@ -199,5 +200,25 @@ export class Wrapper {
           `missing a property: ${util.inspect(response.data, {depth: null})}`);
     }
     return response.data.breakpoint;
+  }
+
+  async profilesCreate() {
+    if (!this.auth || !this.projectId) {
+      throw new Error('You must select a project before continuing.');
+    }
+    const request: types.ProfilesCreateRequest = {
+      parent: 'eyqs-stackdriver-test',
+      requestBody: {
+        deployment: {
+          labels: ['nodejs'],
+          projectId: this.projectId,
+          target: this.projectId,
+        },
+        profileType: [],
+      },
+      auth: this.auth,
+    };
+    const response = await cloudProfiler.profiles.create(request);
+    console.log(response);
   }
 }
