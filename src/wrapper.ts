@@ -143,6 +143,7 @@ export class Wrapper {
           'The debuggees.breakpoints.get response from Stackdriver Debug is ' +
           `missing a property: ${util.inspect(response.data, {depth: null})}`);
     }
+    assert.strictEqual(response.data.breakpoint.id, breakpointId);
     return response.data.breakpoint;
   }
 

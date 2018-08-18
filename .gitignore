@@ -1,5 +1,7 @@
 /build
 /coverage
+/.DS_Store
 /node_modules
 /.nyc_output
 /package-lock.json
+/.vscode

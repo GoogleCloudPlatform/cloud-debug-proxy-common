@@ -5,9 +5,11 @@
   ],
   "pinVersions": false,
   "rebaseStalePrs": true,
-  "lockFileMaintenance": {
-    "enabled": true,
-    "recreateClosed": true
-  },
-  "gitAuthor": null
+  "gitAuthor": null,
+  "packageRules": [
+    {
+      "extends": "packages:linters",
+      "groupName": "linters"
+    }
+  ]
 }
