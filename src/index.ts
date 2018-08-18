@@ -15,7 +15,7 @@
  */
 import * as assert from 'assert';
 import {EventEmitter} from 'events';
-import {clouddebugger_v2} from 'googleapis';
+import {clouddebugger_v2, cloudprofiler_v2} from 'googleapis';
 import * as util from 'util';
 import {Wrapper} from './wrapper';
 import pLimit = require('p-limit');
@@ -82,6 +82,8 @@ export type DebuggeesBreakpointsListRequest =
     clouddebugger_v2.Params$Resource$Debugger$Debuggees$Breakpoints$List;
 export type DebuggeesBreakpointsSetRequest =
     clouddebugger_v2.Params$Resource$Debugger$Debuggees$Breakpoints$Set;
+export type ProfilesCreateRequest =
+    cloudprofiler_v2.Params$Resource$Projects$Profiles$Create;
 
 export interface DebuggeesListResponse {
   data: clouddebugger_v2.Schema$ListDebuggeesResponse;
