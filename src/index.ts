@@ -101,21 +101,21 @@ export interface DebuggeesBreakpointsSetResponse {
 
 const hit = Symbol();
 interface BreakpointInfo {
-  [hit]: boolean;  // Set after a `breakpointHit` event is emitted.
+  [hit]: boolean;  // Set after a 'breakpointHit' event is emitted.
   breakpoint: Breakpoint;
 }
 
 const ABORTED_ERROR_CODE = 409;  // google.rpc.Code.ABORTED
 const CONCURRENCY = 10;
 
-/** @fires breakpointHit as soon as any breakpoints are hit */
+/** @fires 'breakpointHit' as soon as any breakpoints are hit */
 export interface DebugProxyInterface extends EventEmitter {
   /**
    * Updates the state of all pending breakpoints set by
    * this instance that implements `DebugProxyInterface`.
    *
    * @param block - true to block until breakpoint list changes, otherwise false
-   * @fires breakpointHit if any breakpoints were hit since their last checks
+   * @fires 'breakpointHit' if any breakpoints were hit since their last checks
    */
   updatePendingBreakpoints(block: boolean): Promise<void>;
   /**
