@@ -28,6 +28,15 @@ export type SourcePath = string;
 export type Timestamp = string;
 export type WaitToken = string;
 
+export class CancellationToken {
+  private token = false;
+  isCancelled(): boolean {
+    return this.token;
+  }
+  cancel() {
+    this.token = true;
+  }
+}
 export interface Options {
   debuggerId: DebuggerId;
 }
@@ -168,7 +177,7 @@ export class DebugProxy extends EventEmitter implements DebugProxyInterface {
   private readonly wrapper: Wrapper;
   private readonly localBreakpoints = new Set<BreakpointId>();
   private breakpointList: Breakpoint[] = [];
-  private localOnly: boolean = false;
+  private localOnly = false;
 
   constructor(readonly options: Options) {
     super();
@@ -176,14 +185,15 @@ export class DebugProxy extends EventEmitter implements DebugProxyInterface {
   }
 
   async updatePendingBreakpoints(
-      block: boolean, localOnly = false, includeAllUsers = false, includeInactive = true) {
-
+      block: boolean, localOnly = false, includeAllUsers = false,
+      includeInactive = true,
+      cancellationToken: CancellationToken = new CancellationToken()) {
     this.localOnly = localOnly;
     /* debuggees.breakpoints.list times out until the breakpoint list changes.
      * On timeout, it returns the error code google.rpc.Code.ABORTED, and
      * the request should be made again until the breakpoint list changes.
      */
-    while (true) {
+    while (!cancellationToken.isCancelled()) {
       try {
         this.breakpointList = await this.wrapper.debuggeesBreakpointsList(
             block, includeAllUsers, includeInactive);
