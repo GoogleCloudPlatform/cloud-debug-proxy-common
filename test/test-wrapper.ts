@@ -32,7 +32,7 @@ const API_URL = '/v2/debugger';
 
 const INVALID_KEYFILE_ERROR_REGEXP_LIST = [
   /SyntaxError: Unexpected token } in JSON at position 98/,
-  /The given keyFile must contain the project ID\./,
+  /The project ID cannot be determined\./,
   /Error: The incoming JSON object does not contain a private_key field/,
   /Error: The incoming JSON object does not contain a client_email field/,
 ];
@@ -144,6 +144,25 @@ describe('wrapper.ts', () => {
             /application default credentials: Could not load the default/);
       });
 
+      it('should support Application Default Credentials, pass pid',
+         async () => {
+           const wrapper = new Wrapper();
+           process.env.GOOGLE_APPLICATION_CREDENTIALS =
+               './test/fixtures/application_default_credentials_no_project.json';
+           await wrapper.authorize(undefined, 'some-pid');
+           assert.equal(wrapper.getProjectId(), 'some-pid');
+         });
+
+      it('should support Application Default Credentials, pid from env',
+         async () => {
+           const wrapper = new Wrapper();
+           process.env.GOOGLE_APPLICATION_CREDENTIALS =
+               './test/fixtures/application_default_credentials_no_project.json';
+           process.env.GOOGLE_CLOUD_PROJECT = 'some-pid';
+           await wrapper.authorize();
+           assert.equal(wrapper.getProjectId(), 'some-pid');
+         });
+
       INVALID_KEYFILE_ERROR_REGEXP_LIST.forEach((regexp, i) => {
         it(`should not support invalid keyfile ${i}`, async () => {
           const wrapper = new Wrapper();
@@ -178,7 +197,7 @@ describe('wrapper.ts', () => {
         const wrapper = new Wrapper();
         await assertRejects(
             wrapper.authorize('./test/fixtures/invalid_keyfile_1.json'),
-            /The given keyFile must contain the project ID\./);
+            /The project ID cannot be determined\./);
       });
 
       INVALID_KEYFILE_ERROR_REGEXP_LIST.forEach((regexp, i) => {
@@ -188,6 +207,19 @@ describe('wrapper.ts', () => {
               wrapper.authorize(`./test/fixtures/invalid_keyfile_${i}.json`),
               regexp);
         });
+      });
+
+      it('should support keyFile credentials, pass pid', async () => {
+        const wrapper = new Wrapper();
+        await wrapper.authorize('./test/fixtures/keyfile.json', 'some-pid');
+        assert.equal(wrapper.getProjectId(), 'some-pid');
+      });
+
+      it('should support keyFile credentials, pid from env', async () => {
+        const wrapper = new Wrapper();
+        process.env.GOOGLE_CLOUD_PROJECT = 'some-pid';
+        await wrapper.authorize('./test/fixtures/invalid_keyfile_1.json');
+        assert.equal(wrapper.getProjectId(), 'some-pid');
       });
 
       it('should not cache the invalid credentials', async () => {
