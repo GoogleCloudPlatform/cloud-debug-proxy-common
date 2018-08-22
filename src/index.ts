@@ -206,7 +206,7 @@ export class DebugProxy extends EventEmitter implements DebugProxyInterface {
     }
 
     if (this.localOnly) {
-      // check for changes only to local breakpoints
+      // check for changes only to local breakpoints before emitting.
     } else {
       this.emit('updatedBreakpoints');
     }
