@@ -148,8 +148,7 @@ export class Wrapper {
   }
 
   async debuggeesBreakpointsList(
-      wait: boolean, includeAllUsers: boolean,
-      includeInactive: boolean): Promise<types.Breakpoint[]> {
+      wait: boolean, includeAllUsers: boolean): Promise<types.Breakpoint[]> {
     if (!this.auth) {
       throw new Error('You must select a project before continuing.');
     }
@@ -160,8 +159,8 @@ export class Wrapper {
       debuggeeId: this.debuggeeId,
       waitToken: wait ? this.waitToken : '',
       auth: this.auth,
+      includeInactive: true,
       includeAllUsers,
-      includeInactive,
     };
     const response = await cloudDebugger.debuggees.breakpoints.list(request);
     if (!response.data.nextWaitToken) {

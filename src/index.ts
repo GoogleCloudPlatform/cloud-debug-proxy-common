@@ -186,7 +186,6 @@ export class DebugProxy extends EventEmitter implements DebugProxyInterface {
 
   async updatePendingBreakpoints(
       block: boolean, localOnly = false, includeAllUsers = false,
-      includeInactive = true,
       cancellationToken: CancellationToken = new CancellationToken()) {
     this.localOnly = localOnly;
     /* debuggees.breakpoints.list times out until the breakpoint list changes.
@@ -196,7 +195,7 @@ export class DebugProxy extends EventEmitter implements DebugProxyInterface {
     while (!cancellationToken.isCancelled()) {
       try {
         this.breakpointList = await this.wrapper.debuggeesBreakpointsList(
-            block, includeAllUsers, includeInactive);
+            block, includeAllUsers);
         break;
       } catch (error) {
         if (!error.response || error.response.status !== ABORTED_ERROR_CODE) {
@@ -206,7 +205,7 @@ export class DebugProxy extends EventEmitter implements DebugProxyInterface {
     }
 
     if (this.localOnly) {
-      // check for changes only to local breakpoints before emitting.
+      // TODO: check for changes only to local breakpoints before emitting.
     } else {
       this.emit('updatedBreakpoints');
     }
