@@ -121,14 +121,16 @@ export interface DebugProxyInterface extends EventEmitter {
    */
   getProjectId(): ProjectId;
   /**
-   * @param keyFilename - path to the GCP credentials key file
-   * corresponding to the project that is to be debugged
+   * Authorize the DebugProxy with GCP credentials and a GCP project ID.
+   *
+   * @param keyFilename Optional, path to the GCP credentials file. If unset
+   *    application default credentials will be used.
+   * @param projectId - Optional, the GCP project ID of the project to debug.
+   *    If unset the project ID from the key file will be used or from the local
+   *    environment (see https://github.com/google/google-auth-library-nodejs/)
+   *    if the key file does not contain a project ID.
    */
-  setProjectByKeyFile(keyFilename?: SourcePath): Promise<void>;
-
-  // TODO: setProjectById.
-  // https://github.com/GoogleCloudPlatform/cloud-debug-proxy-common/issues/14
-
+  authorize(keyFilename?: SourcePath, projectId?: string): Promise<void>;
   /**
    * @returns debugger ID for the selected GCP debuggee
    */
@@ -215,8 +217,8 @@ export class DebugProxy extends EventEmitter implements DebugProxyInterface {
     return this.wrapper.getProjectId();
   }
 
-  async setProjectByKeyFile(keyFilename?: SourcePath) {
-    await this.wrapper.authorize(keyFilename);
+  async authorize(keyFilename?: SourcePath, projectId?: string) {
+    await this.wrapper.authorize(keyFilename, projectId);
   }
 
   getDebuggerId(): DebuggerId {

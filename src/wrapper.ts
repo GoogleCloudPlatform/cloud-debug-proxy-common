@@ -68,15 +68,17 @@ export class Wrapper {
     return true;
   }
 
-  async authorize(keyFilename?: types.SourcePath) {
+  async authorize(keyFilename?: types.SourcePath, projectId?: string) {
     const credential = await this.googleAuth.getClient({
       keyFilename,
       scopes: ['https://www.googleapis.com/auth/cloud-platform'],
     });
-    if (!credential.projectId) {
-      throw new Error('The given keyFile must contain the project ID.');
+
+    this.projectId = projectId || credential.projectId ||
+        await this.googleAuth.getProjectId();
+    if (!this.projectId) {
+      throw new Error('The project ID cannot be determined.');
     }
-    this.projectId = credential.projectId;
     this.auth = credential as JWT;
   }
 
