@@ -125,9 +125,10 @@ describe('wrapper.ts', () => {
 
       it('should fail if no credentials are given', async () => {
         const wrapper = new Wrapper();
+        nocks.notGCE();
         await assertRejects(
             wrapper.authorize(),
-            /application default credentials: Could not load the default/);
+            /Error: Could not load the default credentials\./);
       });
 
       it('should support Application Default Credentials', async () => {
@@ -139,9 +140,10 @@ describe('wrapper.ts', () => {
 
       it('should not cache the supported credentials', async () => {
         const wrapper = new Wrapper();
+        nocks.notGCE();
         await assertRejects(
             wrapper.authorize(),
-            /application default credentials: Could not load the default/);
+            /Error: Could not load the default credentials\./);
       });
 
       it('should support Application Default Credentials, pass pid',
@@ -185,8 +187,12 @@ describe('wrapper.ts', () => {
         process.env = {};
       });
 
-      // TODO: it should fail if file not found; wait until issue fixed
-      // https://github.com/google/google-auth-library-nodejs/issues/395
+      it('should fail if file not found', async () => {
+        const wrapper = new Wrapper();
+        await assertRejects(
+            wrapper.authorize('DOES_NOT_EXIST'),
+            /ENOENT: no such file or directory, open.*DOES_NOT_EXIST/);
+      });
 
       it('should support keyFile credentials', async () => {
         const wrapper = new Wrapper();
