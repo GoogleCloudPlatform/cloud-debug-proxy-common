@@ -27,3 +27,9 @@ export function oauth2(
         refresh_token: '1/test-refresh-token',
       });
 }
+
+export function notGCE() {
+  return nock('http://metadata.google.internal')
+      .get('/computeMetadata/v1/instance')
+      .replyWithError({code: 'ENOTFOUND'});
+}
