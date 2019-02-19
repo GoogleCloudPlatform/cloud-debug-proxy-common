@@ -41,7 +41,7 @@
     "typescript": "3.3.x"
   },
   "dependencies": {
-    "google-auth-library": "^2.0.0",
+    "google-auth-library": "^3.0.0",
     "googleapis": "^36.0.0",
     "p-limit": "^2.0.0"
   },
