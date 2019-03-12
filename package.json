@@ -42,7 +42,7 @@
   },
   "dependencies": {
     "google-auth-library": "^2.0.0",
-    "googleapis": "^36.0.0",
+    "googleapis": "^38.0.0",
     "p-limit": "^2.0.0"
   },
   "scripts": {
